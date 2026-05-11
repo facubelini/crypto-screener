@@ -20,9 +20,14 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-FUTURES_BASE    = "https://fapi.binance.com"
-FUTURES_BACKUP  = "https://fapi1.binance.com"
+BYBIT_BASE      = "https://api.bybit.com"
 VALID_INTERVALS = {"1m", "5m", "15m", "30m", "1h", "4h", "1d"}
+
+# Bybit usa números para los intervalos, no strings
+INTERVAL_MAP = {
+    "1m": "1", "5m": "5", "15m": "15", "30m": "30",
+    "1h": "60", "4h": "240", "1d": "D",
+}
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "Mozilla/5.0"})
@@ -40,63 +45,55 @@ _state = {
 _lock = threading.Lock()
 
 
-# ── Binance API ────────────────────────────────────────────────────────────────
-
-def _get(url: str, params: dict | None = None, timeout: int = 15):
-    """GET con fallback automático al servidor de backup."""
-    try:
-        r = SESSION.get(url, params=params, timeout=timeout)
-        r.raise_for_status()
-        return r
-    except Exception:
-        backup_url = url.replace(FUTURES_BASE, FUTURES_BACKUP)
-        r = SESSION.get(backup_url, params=params, timeout=timeout)
-        r.raise_for_status()
-        return r
-
+# ── Bybit API ──────────────────────────────────────────────────────────────────
 
 def get_futures_symbols() -> list[str]:
-    r = _get(f"{FUTURES_BASE}/fapi/v1/exchangeInfo")
-    data = r.json()
-    if "symbols" not in data:
-        raise RuntimeError(f"Respuesta inesperada de Binance: {str(data)[:200]}")
-    return sorted(
-        s["symbol"]
-        for s in data["symbols"]
-        if s["contractType"] == "PERPETUAL"
-        and s["quoteAsset"] == "USDT"
-        and s["status"] == "TRADING"
-    )
+    """Obtiene todos los pares USDT perpetuos de Bybit (mismos que Binance Futures)."""
+    symbols = []
+    cursor  = ""
+    while True:
+        params = {"category": "linear", "limit": 1000}
+        if cursor:
+            params["cursor"] = cursor
+        r = SESSION.get(f"{BYBIT_BASE}/v5/market/instruments-info", params=params, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        if data.get("retCode") != 0:
+            raise RuntimeError(f"Bybit error: {data.get('retMsg', 'desconocido')}")
+        result = data["result"]
+        for s in result.get("list", []):
+            if s.get("quoteCoin") == "USDT" and s.get("status") == "Trading":
+                symbols.append(s["symbol"])
+        cursor = result.get("nextPageCursor", "")
+        if not cursor:
+            break
+    return sorted(symbols)
 
 
 def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame | None:
+    bybit_interval = INTERVAL_MAP.get(interval, "60")
     try:
-        r = _get(
-            f"{FUTURES_BASE}/fapi/v1/klines",
-            params={"symbol": symbol, "interval": interval, "limit": limit},
+        r = SESSION.get(
+            f"{BYBIT_BASE}/v5/market/kline",
+            params={"category": "linear", "symbol": symbol,
+                    "interval": bybit_interval, "limit": limit},
             timeout=10,
         )
-        cols = ["ts", "open", "high", "low", "close", "volume",
-                "close_ts", "qvol", "trades", "tbb", "tbq", "ignore"]
-        df = pd.DataFrame(r.json(), columns=cols)
+        r.raise_for_status()
+        data = r.json()
+        if data.get("retCode") != 0:
+            return None
+        raw = data["result"]["list"]
+        if not raw:
+            return None
+        raw = raw[::-1]  # Bybit devuelve newest-first; invertimos a oldest-first
+        df = pd.DataFrame(raw, columns=["ts", "open", "high", "low", "close", "volume", "turnover"])
         for c in ("open", "high", "low", "close", "volume"):
             df[c] = pd.to_numeric(df[c])
         return df
     except Exception as e:
         log.debug("Error fetching %s: %s", symbol, e)
         return None
-
-
-def get_24h_ticker(symbol: str) -> dict:
-    try:
-        r = requests.get(
-            f"{FUTURES_BASE}/fapi/v1/ticker/24hr",
-            params={"symbol": symbol},
-            timeout=5,
-        )
-        return r.json() if r.status_code == 200 else {}
-    except Exception:
-        return {}
 
 
 # ── Indicadores ────────────────────────────────────────────────────────────────
@@ -376,20 +373,14 @@ def api_data():
 
 @app.route("/api/test")
 def api_test():
-    """Diagnóstico: verifica conectividad con Binance."""
+    """Diagnóstico: verifica conectividad con Bybit."""
     try:
-        r = SESSION.get(f"{FUTURES_BASE}/fapi/v1/ping", timeout=10)
-        ping_ok = r.status_code == 200
+        r = SESSION.get(f"{BYBIT_BASE}/v5/market/time", timeout=10)
+        data = r.json()
+        ok = data.get("retCode") == 0
+        return jsonify({"ok": ok, "source": "Bybit", "response": data})
     except Exception as e:
-        return jsonify({"ok": False, "error": f"ping falló: {repr(e)}"}), 200
-
-    try:
-        r2 = SESSION.get(f"{FUTURES_BASE}/fapi/v1/time", timeout=10)
-        time_ok = r2.status_code == 200
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"time falló: {repr(e)}"}), 200
-
-    return jsonify({"ok": ping_ok and time_ok, "ping": ping_ok, "time": time_ok})
+        return jsonify({"ok": False, "error": repr(e)})
 
 
 @app.route("/api/start", methods=["POST"])
