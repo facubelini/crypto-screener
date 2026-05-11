@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crypto Screener — Binance Futures</title>
+<style>
+  :root {
+    --bg:       #0b0e14;
+    --surface:  #131720;
+    --border:   #1e2535;
+    --text:     #d1d5db;
+    --muted:    #6b7280;
+    --accent:   #3b82f6;
+
+    --se: #7f1d1d; --se-t: #fca5a5;  /* SHORT EXTREMO */
+    --sf: #991b1b; --sf-t: #fca5a5;  /* SHORT FUERTE  */
+    --sh: #b91c1c; --sh-t: #fecaca;  /* SHORT         */
+    --sw: #450a0a; --sw-t: #f87171;  /* SHORT DÉBIL   */
+
+    --le: #14532d; --le-t: #86efac;  /* LONG EXTREMO  */
+    --lf: #166534; --lf-t: #86efac;  /* LONG FUERTE   */
+    --lo: #15803d; --lo-t: #bbf7d0;  /* LONG          */
+    --lw: #052e16; --lw-t: #6ee7b7;  /* LONG DÉBIL    */
+
+    --n:  #1e2535; --n-t:  #9ca3af;  /* NEUTRAL       */
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ─────────────────────────────────────────────────────────────── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  header h1 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #f9fafb;
+    letter-spacing: .3px;
+  }
+
+  header h1 span { color: var(--accent); }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-left: auto;
+  }
+
+  select, button {
+    background: #1e2535;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  select:focus, button:focus { outline: 2px solid var(--accent); }
+
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+  button.primary:hover { background: #2563eb; }
+  button.primary:disabled { background: #374151; border-color: #374151; cursor: not-allowed; }
+
+  .last-update { color: var(--muted); font-size: 12px; }
+
+  /* ── PROGRESS ────────────────────────────────────────────────────────────── */
+  #progress-bar-wrap {
+    height: 3px;
+    background: var(--border);
+    display: none;
+  }
+  #progress-bar {
+    height: 3px;
+    background: var(--accent);
+    width: 0%;
+    transition: width .3s ease;
+  }
+
+  /* ── STATS ───────────────────────────────────────────────────────────────── */
+  .stats {
+    display: flex;
+    gap: 8px;
+    padding: 12px 20px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat-pill {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: opacity .15s;
+    user-select: none;
+  }
+  .stat-pill:hover { opacity: .85; }
+  .stat-pill.active { border-color: #fff3; }
+
+  .pill-all   { background: #374151; color: #e5e7eb; }
+  .pill-short { background: #7f1d1d; color: #fca5a5; }
+  .pill-long  { background: #14532d; color: #86efac; }
+  .pill-n     { background: #1e2535; color: #9ca3af; }
+
+  /* ── TOOLBAR ─────────────────────────────────────────────────────────────── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #search-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 6px 12px;
+    font-size: 13px;
+    width: 220px;
+  }
+  #search-box:focus { outline: 2px solid var(--accent); }
+  #search-box::placeholder { color: var(--muted); }
+
+  .count-label { color: var(--muted); font-size: 12px; margin-left: auto; }
+
+  /* ── STATUS MESSAGE ──────────────────────────────────────────────────────── */
+  #status-msg {
+    padding: 40px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 15px;
+  }
+  #status-msg .spinner {
+    display: inline-block;
+    width: 24px; height: 24px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+    vertical-align: middle;
+    margin-right: 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── TABLE ───────────────────────────────────────────────────────────────── */
+  .table-wrap {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: calc(100vh - 220px);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  thead th {
+    background: #0d1117;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+  }
+  thead th:hover { color: var(--text); }
+  thead th.sorted-asc::after  { content: " ▲"; color: var(--accent); }
+  thead th.sorted-desc::after { content: " ▼"; color: var(--accent); }
+
+  /* Column widths */
+  .col-symbol  { width: 110px; }
+  .col-price   { width: 100px; }
+  .col-chg     { width: 75px; }
+  .col-score   { width: 65px; }
+  .col-signal  { width: 130px; }
+  .col-rsi     { width: 60px; }
+  .col-srsi    { width: 75px; }
+  .col-bb      { width: 65px; }
+  .col-ema     { width: 80px; }
+  .col-vol     { width: 70px; }
+  .col-details { width: auto; }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: filter .1s;
+  }
+  tbody tr:hover { filter: brightness(1.25); }
+
+  tbody td {
+    padding: 7px 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+  }
+
+  /* Signal row colors */
+  tr.se { background: var(--se); color: var(--se-t); }
+  tr.sf { background: var(--sf); color: var(--sf-t); }
+  tr.sh { background: var(--sh); color: var(--sh-t); }
+  tr.sw { background: var(--sw); color: var(--sw-t); }
+  tr.le { background: var(--le); color: var(--le-t); }
+  tr.lf { background: var(--lf); color: var(--lf-t); }
+  tr.lo { background: var(--lo); color: var(--lo-t); }
+  tr.lw { background: var(--lw); color: var(--lw-t); }
+  tr.n  { background: var(--n);  color: var(--n-t);  }
+
+  /* Signal badge */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: .3px;
+  }
+  tr.se .badge, tr.sf .badge, tr.sh .badge, tr.sw .badge
+    { background: rgba(0,0,0,.3); color: inherit; }
+  tr.le .badge, tr.lf .badge, tr.lo .badge, tr.lw .badge
+    { background: rgba(0,0,0,.25); color: inherit; }
+  tr.n  .badge { background: rgba(255,255,255,.08); color: inherit; }
+
+  .sym-link {
+    color: inherit;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .sym-link:hover { text-decoration: underline; }
+
+  .pos { color: #4ade80; }
+  .neg { color: #f87171; }
+  tbody td.pos { color: #4ade80; }
+  tbody td.neg { color: #f87171; }
+  tr.sh td.pos, tr.sf td.pos, tr.se td.pos { color: #fbbf24; }
+  tr.lo td.pos, tr.lf td.pos, tr.le td.pos { color: #34d399; }
+
+  .details-row { display: none; }
+  .details-row td {
+    padding: 6px 12px 10px 30px;
+    font-size: 12px;
+    color: inherit;
+    opacity: .8;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  /* ── EMA indicator ───────────────────────────────────────────────────────── */
+  .ema-up   { color: #4ade80; font-weight: 600; }
+  .ema-down { color: #f87171; font-weight: 600; }
+
+  /* ── RSI bar ─────────────────────────────────────────────────────────────── */
+  .rsi-bar {
+    width: 40px;
+    height: 4px;
+    background: #374151;
+    border-radius: 2px;
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 4px;
+    overflow: hidden;
+  }
+  .rsi-fill {
+    height: 100%;
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Crypto <span>Screener</span> — Binance Futures</h1>
+
+  <div class="controls">
+    <label for="interval-sel" style="color:var(--muted); font-size:12px;">Temporalidad:</label>
+    <select id="interval-sel">
+      <option value="15m">15 minutos</option>
+      <option value="1h" selected>1 hora</option>
+      <option value="4h">4 horas</option>
+      <option value="1d">Diario</option>
+    </select>
+
+    <button class="primary" id="scan-btn" onclick="startScan()">▶ Escanear</button>
+
+    <span class="last-update" id="last-update"></span>
+  </div>
+</header>
+
+<div id="progress-bar-wrap">
+  <div id="progress-bar"></div>
+</div>
+
+<div class="stats" id="stats-bar">
+  <span class="stat-pill pill-all active"  data-filter="all"     onclick="setFilter(this)">TODOS: 0</span>
+  <span class="stat-pill pill-short"       data-filter="short"   onclick="setFilter(this)">SHORT: 0</span>
+  <span class="stat-pill pill-long"        data-filter="long"    onclick="setFilter(this)">LONG: 0</span>
+  <span class="stat-pill pill-n"           data-filter="neutral" onclick="setFilter(this)">NEUTRAL: 0</span>
+</div>
+
+<div class="toolbar">
+  <input id="search-box" type="text" placeholder="Buscar símbolo… (ej: BTC, ETH)"
+         oninput="applyFilters()">
+  <span class="count-label" id="count-label">0 resultados</span>
+</div>
+
+<div id="status-msg">
+  Presioná <strong>Escanear</strong> para analizar todos los futuros de Binance.
+</div>
+
+<div class="table-wrap" id="table-wrap" style="display:none;">
+  <table id="main-table">
+    <thead>
+      <tr>
+        <th class="col-symbol"  onclick="sortTable('symbol')">Símbolo</th>
+        <th class="col-price"   onclick="sortTable('price')">Precio</th>
+        <th class="col-chg"     onclick="sortTable('chg24h')">24h %</th>
+        <th class="col-score"   onclick="sortTable('score')">Score</th>
+        <th class="col-signal"  onclick="sortTable('signal')">Señal</th>
+        <th class="col-rsi"     onclick="sortTable('rsi')">RSI</th>
+        <th class="col-srsi"    onclick="sortTable('srsi')">StochRSI</th>
+        <th class="col-bb"      onclick="sortTable('bb_pct')">BB %</th>
+        <th class="col-ema"     onclick="sortTable('ema_trend')">EMA</th>
+        <th class="col-vol"     onclick="sortTable('vol_ratio')">Vol×</th>
+        <th class="col-details">Indicadores</th>
+      </tr>
+    </thead>
+    <tbody id="table-body"></tbody>
+  </table>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let allData     = [];
+let filtered    = [];
+let sortKey     = 'score';
+let sortAsc     = true;
+let activeFilter = 'all';
+let pollTimer   = null;
+
+// ── Polling ────────────────────────────────────────────────────────────────────
+async function startScan() {
+  const btn      = document.getElementById('scan-btn');
+  const interval = document.getElementById('interval-sel').value;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Escaneando…';
+  showStatus('<span class="spinner"></span> Iniciando escaneo…');
+
+  try {
+    const res = await fetch('/api/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interval })
+    });
+    const j = await res.json();
+    if (!j.ok) { alert(j.msg); btn.disabled = false; btn.textContent = '▶ Escanear'; return; }
+    pollStatus();
+  } catch(e) {
+    showStatus('Error al conectar con el servidor.');
+    btn.disabled = false;
+    btn.textContent = '▶ Escanear';
+  }
+}
+
+async function pollStatus() {
+  clearTimeout(pollTimer);
+  try {
+    const res  = await fetch('/api/state');
+    const s    = await res.json();
+    const pct  = s.total > 0 ? (s.progress / s.total * 100) : 0;
+
+    document.getElementById('progress-bar-wrap').style.display = 'block';
+    document.getElementById('progress-bar').style.width = pct + '%';
+
+    if (s.status === 'running') {
+      showStatus(`<span class="spinner"></span> Analizando… ${s.progress} / ${s.total} futuros`);
+      pollTimer = setTimeout(pollStatus, 800);
+    } else if (s.status === 'done') {
+      document.getElementById('progress-bar').style.width = '100%';
+      await loadData(s);
+      document.getElementById('progress-bar-wrap').style.display = 'none';
+      document.getElementById('scan-btn').disabled   = false;
+      document.getElementById('scan-btn').textContent = '▶ Re-escanear';
+    } else if (s.status === 'error') {
+      showStatus('Error: ' + (s.error || 'desconocido'));
+      document.getElementById('scan-btn').disabled   = false;
+      document.getElementById('scan-btn').textContent = '▶ Escanear';
+    }
+  } catch(e) {
+    pollTimer = setTimeout(pollStatus, 2000);
+  }
+}
+
+async function loadData(state) {
+  const res = await fetch('/api/data');
+  allData   = await res.json();
+  document.getElementById('last-update').textContent =
+    state.last_update ? `Actualizado: ${state.last_update}` : '';
+  updateStats();
+  applyFilters();
+  document.getElementById('status-msg').style.display  = 'none';
+  document.getElementById('table-wrap').style.display  = 'block';
+}
+
+// ── Filtering & Sorting ────────────────────────────────────────────────────────
+function setFilter(el) {
+  document.querySelectorAll('.stat-pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  activeFilter = el.dataset.filter;
+  applyFilters();
+}
+
+function applyFilters() {
+  const q = document.getElementById('search-box').value.toLowerCase().trim();
+
+  filtered = allData.filter(r => {
+    const sym = r.symbol.toLowerCase();
+    if (q && !sym.includes(q)) return false;
+    if (activeFilter === 'short')   return ['se','sf','sh','sw'].includes(r.cls);
+    if (activeFilter === 'long')    return ['le','lf','lo','lw'].includes(r.cls);
+    if (activeFilter === 'neutral') return r.cls === 'n';
+    return true;
+  });
+
+  sortData();
+  renderTable();
+  document.getElementById('count-label').textContent = filtered.length + ' resultados';
+}
+
+function sortTable(key) {
+  if (sortKey === key) sortAsc = !sortAsc;
+  else { sortKey = key; sortAsc = true; }
+
+  document.querySelectorAll('thead th').forEach(th => {
+    th.classList.remove('sorted-asc','sorted-desc');
+  });
+  const cols = ['symbol','price','chg24h','score','signal','rsi','srsi','bb_pct','ema_trend','vol_ratio'];
+  const idx  = cols.indexOf(key);
+  if (idx >= 0) {
+    const ths = document.querySelectorAll('thead th');
+    ths[idx].classList.add(sortAsc ? 'sorted-asc' : 'sorted-desc');
+  }
+
+  sortData();
+  renderTable();
+}
+
+function sortData() {
+  filtered.sort((a, b) => {
+    let va = a[sortKey], vb = b[sortKey];
+    if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sortAsc ? va - vb : vb - va;
+  });
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────────
+function renderTable() {
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+
+  filtered.forEach((r, i) => {
+    const chgClass = r.chg24h >= 0 ? 'pos' : 'neg';
+    const chgStr   = (r.chg24h >= 0 ? '+' : '') + r.chg24h.toFixed(2) + '%';
+
+    const rsiColor  = rsiToColor(r.rsi);
+    const srsiColor = rsiToColor(r.srsi);
+
+    const emaClass = r.ema_trend === 'ALCISTA' ? 'ema-up' : 'ema-down';
+    const emaArrow = r.ema_trend === 'ALCISTA' ? '↑' : '↓';
+
+    const volStr   = r.vol_ratio >= 2 ? `<strong>×${r.vol_ratio}</strong>` : `×${r.vol_ratio}`;
+
+    const priceStr = formatPrice(r.price);
+    const scoreStr = r.score > 0 ? `+${r.score}` : `${r.score}`;
+
+    const row = document.createElement('tr');
+    row.className = r.cls;
+    row.dataset.idx = i;
+    row.innerHTML = `
+      <td class="col-symbol">
+        <a class="sym-link" href="${r.link}" target="_blank" onclick="event.stopPropagation()">
+          ${r.symbol}
+        </a>
+      </td>
+      <td class="col-price">${priceStr}</td>
+      <td class="col-chg ${chgClass}">${chgStr}</td>
+      <td class="col-score"><strong>${scoreStr}</strong></td>
+      <td class="col-signal"><span class="badge">${r.signal}</span></td>
+      <td class="col-rsi">
+        ${r.rsi}
+        <span class="rsi-bar"><span class="rsi-fill" style="width:${r.rsi}%;background:${rsiColor}"></span></span>
+      </td>
+      <td class="col-srsi">
+        ${r.srsi}
+        <span class="rsi-bar"><span class="rsi-fill" style="width:${r.srsi}%;background:${srsiColor}"></span></span>
+      </td>
+      <td class="col-bb">${r.bb_pct}%</td>
+      <td class="col-ema"><span class="${emaClass}">${emaArrow} ${r.ema_trend}</span></td>
+      <td class="col-vol">${volStr}</td>
+      <td class="col-details" title="${r.details}">${r.details}</td>
+    `;
+
+    const detailRow = document.createElement('tr');
+    detailRow.className = 'details-row ' + r.cls;
+    detailRow.innerHTML = `<td colspan="11">📊 <strong>Detalle:</strong> ${r.details} &nbsp;|&nbsp; ATR: ${r.atr_pct}%</td>`;
+
+    row.addEventListener('click', () => {
+      const vis = detailRow.style.display === 'table-row';
+      detailRow.style.display = vis ? 'none' : 'table-row';
+    });
+
+    tbody.appendChild(row);
+    tbody.appendChild(detailRow);
+  });
+}
+
+// ── Stats pills ────────────────────────────────────────────────────────────────
+function updateStats() {
+  const total   = allData.length;
+  const shorts  = allData.filter(r => ['se','sf','sh','sw'].includes(r.cls)).length;
+  const longs   = allData.filter(r => ['le','lf','lo','lw'].includes(r.cls)).length;
+  const neutral = allData.filter(r => r.cls === 'n').length;
+
+  document.querySelector('[data-filter=all]').textContent     = `TODOS: ${total}`;
+  document.querySelector('[data-filter=short]').textContent   = `SHORT: ${shorts}`;
+  document.querySelector('[data-filter=long]').textContent    = `LONG: ${longs}`;
+  document.querySelector('[data-filter=neutral]').textContent = `NEUTRAL: ${neutral}`;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function showStatus(html) {
+  const el = document.getElementById('status-msg');
+  el.style.display = 'block';
+  el.innerHTML     = html;
+}
+
+function formatPrice(p) {
+  if (p >= 1000)    return '$' + p.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  if (p >= 1)       return '$' + p.toFixed(4);
+  if (p >= 0.001)   return '$' + p.toFixed(6);
+  return '$' + p.toFixed(8);
+}
+
+function rsiToColor(v) {
+  if (v >= 70) return '#ef4444';
+  if (v >= 55) return '#f97316';
+  if (v <= 30) return '#22c55e';
+  if (v <= 45) return '#84cc16';
+  return '#6b7280';
+}
+</script>
+</body>
+</html>
