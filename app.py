@@ -21,7 +21,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 FUTURES_BASE    = "https://fapi.binance.com"
+FUTURES_BACKUP  = "https://fapi1.binance.com"
 VALID_INTERVALS = {"1m", "5m", "15m", "30m", "1h", "4h", "1d"}
+
+SESSION = requests.Session()
+SESSION.headers.update({"User-Agent": "Mozilla/5.0"})
 
 # ── Estado global del screener ─────────────────────────────────────────────────
 _state = {
@@ -38,12 +42,27 @@ _lock = threading.Lock()
 
 # ── Binance API ────────────────────────────────────────────────────────────────
 
+def _get(url: str, params: dict | None = None, timeout: int = 15):
+    """GET con fallback automático al servidor de backup."""
+    try:
+        r = SESSION.get(url, params=params, timeout=timeout)
+        r.raise_for_status()
+        return r
+    except Exception:
+        backup_url = url.replace(FUTURES_BASE, FUTURES_BACKUP)
+        r = SESSION.get(backup_url, params=params, timeout=timeout)
+        r.raise_for_status()
+        return r
+
+
 def get_futures_symbols() -> list[str]:
-    r = requests.get(f"{FUTURES_BASE}/fapi/v1/exchangeInfo", timeout=15)
-    r.raise_for_status()
+    r = _get(f"{FUTURES_BASE}/fapi/v1/exchangeInfo")
+    data = r.json()
+    if "symbols" not in data:
+        raise RuntimeError(f"Respuesta inesperada de Binance: {str(data)[:200]}")
     return sorted(
         s["symbol"]
-        for s in r.json()["symbols"]
+        for s in data["symbols"]
         if s["contractType"] == "PERPETUAL"
         and s["quoteAsset"] == "USDT"
         and s["status"] == "TRADING"
@@ -52,12 +71,11 @@ def get_futures_symbols() -> list[str]:
 
 def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame | None:
     try:
-        r = requests.get(
+        r = _get(
             f"{FUTURES_BASE}/fapi/v1/klines",
             params={"symbol": symbol, "interval": interval, "limit": limit},
             timeout=10,
         )
-        r.raise_for_status()
         cols = ["ts", "open", "high", "low", "close", "volume",
                 "close_ts", "qvol", "trades", "tbb", "tbq", "ignore"]
         df = pd.DataFrame(r.json(), columns=cols)
@@ -303,7 +321,7 @@ def _run_screener(interval: str) -> None:
         results = []
         done    = 0
 
-        with ThreadPoolExecutor(max_workers=10) as ex:
+        with ThreadPoolExecutor(max_workers=5) as ex:
             futs = {ex.submit(analyze, s, interval): s for s in symbols}
             for f in as_completed(futs):
                 done += 1
@@ -324,9 +342,10 @@ def _run_screener(interval: str) -> None:
         log.info("Screener completado: %d resultados", len(results))
 
     except Exception as e:
-        log.exception("Error en screener")
+        msg = repr(e) if str(e) == "" else str(e)
+        log.exception("Error en screener: %s", msg)
         with _lock:
-            _state.update({"status": "error", "error": str(e)})
+            _state.update({"status": "error", "error": msg})
 
 
 # ── Rutas Flask ────────────────────────────────────────────────────────────────
@@ -353,6 +372,24 @@ def api_state():
 def api_data():
     with _lock:
         return jsonify(_state["data"])
+
+
+@app.route("/api/test")
+def api_test():
+    """Diagnóstico: verifica conectividad con Binance."""
+    try:
+        r = SESSION.get(f"{FUTURES_BASE}/fapi/v1/ping", timeout=10)
+        ping_ok = r.status_code == 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"ping falló: {repr(e)}"}), 200
+
+    try:
+        r2 = SESSION.get(f"{FUTURES_BASE}/fapi/v1/time", timeout=10)
+        time_ok = r2.status_code == 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"time falló: {repr(e)}"}), 200
+
+    return jsonify({"ok": ping_ok and time_ok, "ping": ping_ok, "time": time_ok})
 
 
 @app.route("/api/start", methods=["POST"])
