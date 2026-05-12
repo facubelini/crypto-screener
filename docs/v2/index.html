@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crypto Screener v2 — TP/SL · Binance Futures</title>
+<style>
+:root {
+  --bg:#0b0e14; --surface:#131720; --border:#1e2535;
+  --text:#d1d5db; --muted:#6b7280; --accent:#3b82f6;
+  --se:#7f1d1d; --se-t:#fca5a5; --sf:#991b1b; --sf-t:#fca5a5;
+  --sh:#b91c1c; --sh-t:#fecaca; --sw:#450a0a; --sw-t:#f87171;
+  --le:#14532d; --le-t:#86efac; --lf:#166534; --lf-t:#86efac;
+  --lo:#15803d; --lo-t:#bbf7d0; --lw:#052e16; --lw-t:#6ee7b7;
+  --n:#1e2535;  --n-t:#9ca3af;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;min-height:100vh}
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+header h1{font-size:17px;font-weight:700;color:#f9fafb}
+header h1 span{color:var(--accent)}
+.badge-v2{background:#7c3aed;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;vertical-align:middle;margin-left:4px}
+.controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+select,button{background:#1e2535;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary:hover{background:#2563eb}
+button.primary:disabled{background:#374151;border-color:#374151;cursor:not-allowed}
+.last-update{color:var(--muted);font-size:12px}
+
+/* ── Progress ────────────────────────────────────────────────────────── */
+#progress-bar-wrap{height:3px;background:var(--border);display:none}
+#progress-bar{height:3px;background:var(--accent);width:0%;transition:width .2s}
+
+/* ── Stats ───────────────────────────────────────────────────────────── */
+.stats{display:flex;gap:8px;padding:10px 20px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
+.stat-pill{padding:4px 12px;border-radius:20px;font-weight:600;font-size:12px;cursor:pointer;border:1px solid transparent;user-select:none}
+.stat-pill.active{border-color:#fff3}
+.pill-all{background:#374151;color:#e5e7eb}
+.pill-short{background:#7f1d1d;color:#fca5a5}
+.pill-long{background:#14532d;color:#86efac}
+.pill-n{background:#1e2535;color:#9ca3af}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────── */
+.toolbar{display:flex;align-items:center;gap:12px;padding:8px 20px;border-bottom:1px solid var(--border)}
+#search-box{background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 12px;font-size:13px;width:200px}
+#search-box::placeholder{color:var(--muted)}
+.count-label{color:var(--muted);font-size:12px;margin-left:auto}
+.hint{color:var(--muted);font-size:11px}
+
+/* ── Status ──────────────────────────────────────────────────────────── */
+#status-msg{padding:40px;text-align:center;color:var(--muted);font-size:15px}
+.spinner{display:inline-block;width:22px;height:22px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Layout with side panel ──────────────────────────────────────────── */
+.main-layout{display:flex;overflow:hidden;height:calc(100vh - 152px)}
+.table-wrap{flex:1;overflow:auto;transition:margin-right .3s}
+.table-wrap.panel-open{margin-right:420px}
+
+/* ── Table ───────────────────────────────────────────────────────────── */
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+thead th{background:#0d1117;position:sticky;top:0;z-index:2;padding:7px 10px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;user-select:none}
+thead th:hover{color:var(--text)}
+thead th.sorted-asc::after{content:" ▲";color:var(--accent)}
+thead th.sorted-desc::after{content:" ▼";color:var(--accent)}
+.col-sym{width:105px}.col-price{width:98px}.col-chg{width:68px}.col-score{width:58px}
+.col-signal{width:126px}.col-rsi{width:58px}.col-srsi{width:68px}.col-bb{width:60px}
+.col-ema{width:78px}.col-vol{width:60px}.col-sl{width:85px}.col-tp{width:85px}
+tbody tr{border-bottom:1px solid var(--border);cursor:pointer;transition:filter .1s}
+tbody tr:hover{filter:brightness(1.28)}
+tbody tr.selected{outline:2px solid var(--accent);outline-offset:-2px}
+tbody td{padding:6px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+tr.se{background:var(--se);color:var(--se-t)} tr.sf{background:var(--sf);color:var(--sf-t)}
+tr.sh{background:var(--sh);color:var(--sh-t)} tr.sw{background:var(--sw);color:var(--sw-t)}
+tr.le{background:var(--le);color:var(--le-t)} tr.lf{background:var(--lf);color:var(--lf-t)}
+tr.lo{background:var(--lo);color:var(--lo-t)} tr.lw{background:var(--lw);color:var(--lw-t)}
+tr.n{background:var(--n);color:var(--n-t)}
+.badge{display:inline-block;padding:2px 7px;border-radius:4px;font-weight:700;font-size:11px;background:rgba(0,0,0,.3);color:inherit}
+.sym-link{color:inherit;text-decoration:none;font-weight:700}
+.sym-link:hover{text-decoration:underline}
+td.pos{color:#4ade80} td.neg{color:#f87171}
+.rsi-bar{width:34px;height:4px;background:#374151;border-radius:2px;display:inline-block;vertical-align:middle;margin-left:3px;overflow:hidden}
+.rsi-fill{height:100%;border-radius:2px}
+.ema-up{color:#4ade80;font-weight:600} .ema-down{color:#f87171;font-weight:600}
+.sl-cell{color:#f87171;font-weight:600} .tp-cell{color:#4ade80;font-weight:600}
+
+/* ── Side Panel ──────────────────────────────────────────────────────── */
+.side-panel{
+  position:fixed;right:-440px;top:0;height:100vh;width:420px;
+  background:var(--surface);border-left:2px solid var(--border);
+  z-index:50;transition:right .3s ease;overflow-y:auto;
+}
+.side-panel.open{right:0}
+.panel-header{
+  position:sticky;top:0;background:var(--surface);
+  border-bottom:1px solid var(--border);padding:14px 16px;
+  display:flex;align-items:center;gap:10px;z-index:1;
+}
+.panel-close{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
+.panel-close:hover{color:var(--text);border-color:var(--text)}
+.panel-body{padding:16px}
+
+/* ── Panel inner elements ────────────────────────────────────────────── */
+.section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:10px}
+.levels-table{width:100%;border-collapse:collapse;font-size:13px}
+.levels-table td{padding:7px 8px;border-bottom:1px solid var(--border)}
+.levels-table tr:last-child td{border-bottom:none}
+.level-label{color:var(--text);font-weight:600}
+.level-price{text-align:right;font-weight:700}
+.level-pct{text-align:right;font-size:12px}
+.level-rr{text-align:right;font-size:12px;color:var(--muted)}
+.calc-box{background:#0d1117;border-radius:8px;padding:14px;margin-bottom:16px}
+.calc-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.calc-label{font-size:11px;color:var(--muted);display:block;margin-bottom:4px}
+.calc-input{width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:6px 8px;font-size:13px}
+.calc-input:focus{outline:1px solid var(--accent)}
+.result-row{display:flex;justify-content:space-between;padding:3px 0;font-size:13px}
+.result-label{color:var(--muted)}
+.indicators-list{line-height:2;font-size:12px;color:var(--text)}
+.tp-row-1{background:rgba(74,222,128,.05)}
+.tp-row-2{background:rgba(74,222,128,.08)}
+.tp-row-3{background:rgba(74,222,128,.12)}
+.sl-row{background:rgba(248,113,113,.07)}
+.entry-row{background:rgba(59,130,246,.07)}
+.swing-note{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6}
+.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Crypto <span>Screener</span><span class="badge-v2">v2</span></h1>
+  <div class="controls">
+    <label style="color:var(--muted);font-size:12px">Temporalidad:</label>
+    <select id="interval-sel">
+      <option value="15m">15 minutos</option>
+      <option value="1h" selected>1 hora</option>
+      <option value="4h">4 horas</option>
+      <option value="1d">Diario</option>
+    </select>
+    <label style="color:var(--muted);font-size:12px">SL (ATR ×)</label>
+    <select id="atr-mult">
+      <option value="1.5">1.5 — ajustado</option>
+      <option value="2.0" selected>2.0 — estándar</option>
+      <option value="3.0">3.0 — amplio</option>
+    </select>
+    <button class="primary" id="scan-btn" onclick="startScan()">▶ Escanear</button>
+    <span class="last-update" id="last-update"></span>
+    <a href="../" style="color:var(--muted);font-size:12px;text-decoration:none">← v1</a>
+  </div>
+</header>
+
+<div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+
+<div class="stats">
+  <span class="stat-pill pill-all active" data-filter="all"     onclick="setFilter(this)">TODOS: 0</span>
+  <span class="stat-pill pill-short"      data-filter="short"   onclick="setFilter(this)">SHORT: 0</span>
+  <span class="stat-pill pill-long"       data-filter="long"    onclick="setFilter(this)">LONG: 0</span>
+  <span class="stat-pill pill-n"          data-filter="neutral" onclick="setFilter(this)">NEUTRAL: 0</span>
+</div>
+
+<div class="toolbar">
+  <input id="search-box" type="text" placeholder="Buscar símbolo…" oninput="applyFilters()">
+  <span class="hint">Click en una fila → ver TP/SL y calculadora</span>
+  <span class="count-label" id="count-label">0 resultados</span>
+</div>
+
+<div id="status-msg">Presioná <strong>Escanear</strong> para analizar todos los futuros de Binance.</div>
+
+<div class="main-layout" id="main-layout" style="display:none">
+  <div class="table-wrap" id="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-sym"    onclick="sortBy('symbol')">Símbolo</th>
+          <th class="col-price"  onclick="sortBy('price')">Precio</th>
+          <th class="col-chg"    onclick="sortBy('chg24h')">24h %</th>
+          <th class="col-score"  onclick="sortBy('score')">Score</th>
+          <th class="col-signal" onclick="sortBy('signal')">Señal</th>
+          <th class="col-rsi"    onclick="sortBy('rsi')">RSI</th>
+          <th class="col-srsi"   onclick="sortBy('srsi')">StochRSI</th>
+          <th class="col-bb"     onclick="sortBy('bb_pct')">BB %</th>
+          <th class="col-ema"    onclick="sortBy('ema_trend')">EMA</th>
+          <th class="col-vol"    onclick="sortBy('vol_ratio')">Vol×</th>
+          <th class="col-sl"     onclick="sortBy('sl_pct')">Stop Loss</th>
+          <th class="col-tp"     onclick="sortBy('tp2_pct')">TP2 (1:2)</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Side Panel -->
+<div class="side-panel" id="side-panel">
+  <div class="panel-header">
+    <div id="panel-title" style="font-weight:700;font-size:15px;color:#f9fafb;flex:1">—</div>
+    <button class="panel-close" onclick="closePanel()">✕ Cerrar</button>
+  </div>
+  <div class="panel-body" id="panel-body"></div>
+</div>
+
+<script>
+const BINANCE = "https://fapi.binance.com";
+let allData = [], filtered = [], sortKey = "score", sortAsc = true;
+let activeFilter = "all", running = false, selectedSym = null;
+const klinesCache = new Map();
+
+// ── Math helpers ───────────────────────────────────────────────────────────────
+function wilderEMA(arr, period) {
+  if (arr.length < period) return NaN;
+  let v = arr.slice(0, period).reduce((a,b)=>a+b) / period;
+  const a = 1 / period;
+  for (let i = period; i < arr.length; i++) v = v*(1-a) + arr[i]*a;
+  return v;
+}
+function stdEMA(arr, period) {
+  if (arr.length < period) return NaN;
+  const a = 2/(period+1);
+  let v = arr.slice(0, period).reduce((a,b)=>a+b) / period;
+  for (let i = period; i < arr.length; i++) v = arr[i]*a + v*(1-a);
+  return v;
+}
+function stdEMAFull(arr, period) {
+  if (arr.length < period) return arr.map(()=>NaN);
+  const a = 2/(period+1);
+  const out = new Array(period-1).fill(NaN);
+  let v = arr.slice(0,period).reduce((s,x)=>s+x)/period;
+  out.push(v);
+  for (let i = period; i < arr.length; i++) { v=arr[i]*a+v*(1-a); out.push(v); }
+  return out;
+}
+
+// ── RSI ────────────────────────────────────────────────────────────────────────
+function rsiSeries(closes, period=14) {
+  const g=[], l=[];
+  for (let i=1;i<closes.length;i++){const d=closes[i]-closes[i-1];g.push(d>0?d:0);l.push(d<0?-d:0);}
+  if (g.length<period) return [];
+  const a=1/period;
+  let ag=g.slice(0,period).reduce((s,x)=>s+x)/period;
+  let al=l.slice(0,period).reduce((s,x)=>s+x)/period;
+  const out=[al===0?100:100-100/(1+ag/al)];
+  for (let i=period;i<g.length;i++){ag=ag*(1-a)+g[i]*a;al=al*(1-a)+l[i]*a;out.push(al===0?100:100-100/(1+ag/al));}
+  return out;
+}
+
+function calcStochRSI(closes,rP=14,stP=14,sk=3) {
+  const rs=rsiSeries(closes,rP);
+  if (rs.length<stP+sk) return 50;
+  const raw=[];
+  for (let i=stP-1;i<rs.length;i++){const w=rs.slice(i-stP+1,i+1);const lo=Math.min(...w),hi=Math.max(...w);raw.push(hi===lo?50:(rs[i]-lo)/(hi-lo)*100);}
+  if (raw.length<sk) return 50;
+  let k=0;for(let i=raw.length-sk;i<raw.length;i++)k+=raw[i];
+  return k/sk;
+}
+
+function calcMACD(closes) {
+  const fast=stdEMAFull(closes,12),slow=stdEMAFull(closes,26);
+  const macd=fast.map((v,i)=>(isNaN(v)||isNaN(slow[i]))?NaN:v-slow[i]);
+  const valid=macd.filter(v=>!isNaN(v));
+  if (valid.length<9) return {histCur:0,histPrv:0};
+  const sig=stdEMAFull(valid,9);
+  const hist=sig.map((v,i)=>isNaN(v)?NaN:valid[i]-v).filter(v=>!isNaN(v));
+  return {histCur:hist[hist.length-1]??0, histPrv:hist[hist.length-2]??0};
+}
+
+function calcBB(closes,period=20) {
+  if (closes.length<period) return 50;
+  const sl=closes.slice(-period);
+  const mean=sl.reduce((a,b)=>a+b)/period;
+  const std=Math.sqrt(sl.reduce((s,v)=>s+(v-mean)**2,0)/period);
+  const up=mean+2*std,lo=mean-2*std,price=closes[closes.length-1];
+  return up===lo?50:(price-lo)/(up-lo)*100;
+}
+
+function calcATR(highs,lows,closes,period=14) {
+  const trs=[];
+  for (let i=1;i<closes.length;i++) trs.push(Math.max(highs[i]-lows[i],Math.abs(highs[i]-closes[i-1]),Math.abs(lows[i]-closes[i-1])));
+  return wilderEMA(trs,period);
+}
+
+// ── TP/SL calculator ───────────────────────────────────────────────────────────
+function calcTPSL(r, klines, atrMult) {
+  if (!klines || klines.length < 30) return null;
+  const closes = klines.map(k=>+k[4]);
+  const highs  = klines.map(k=>+k[2]);
+  const lows   = klines.map(k=>+k[3]);
+  const price  = closes[closes.length-1];
+  const atr    = calcATR(highs, lows, closes, 14);
+  if (isNaN(atr)) return null;
+
+  const slDist     = atr * atrMult;
+  const isShort    = ["se","sf","sh","sw"].includes(r.cls);
+  const isActionable = isShort || ["le","lf","lo","lw"].includes(r.cls);
+  if (!isActionable) return null;
+
+  const dir = isShort ? 1 : -1; // 1=short goes UP for SL, -1=long goes DOWN for SL
+
+  const sl   = price + dir * slDist;
+  const tp1  = price - dir * slDist;
+  const tp2  = price - dir * slDist * 2;
+  const tp3  = price - dir * slDist * 3;
+
+  // Swing reference (last 20 bars)
+  const last20H = Math.max(...highs.slice(-20));
+  const last20L = Math.min(...lows.slice(-20));
+  const slSwing = isShort ? last20H * 1.003 : last20L * 0.997;
+
+  const pct = (v,base) => ((v-base)/base*100).toFixed(2);
+
+  return {
+    isShort, entry: price, atr, slDist,
+    sl, slPct: +pct(sl,price),
+    tp1, tp1Pct: +pct(tp1,price),
+    tp2, tp2Pct: +pct(tp2,price),
+    tp3, tp3Pct: +pct(tp3,price),
+    slSwing, slSwingPct: +pct(slSwing,price),
+  };
+}
+
+// ── Main analysis ──────────────────────────────────────────────────────────────
+function analyzeKlines(symbol, klines, atrMult) {
+  if (!klines || klines.length < 60) return null;
+  const closes  = klines.map(k=>+k[4]);
+  const highs   = klines.map(k=>+k[2]);
+  const lows    = klines.map(k=>+k[3]);
+  const volumes = klines.map(k=>+k[5]);
+  const price   = closes[closes.length-1];
+
+  const rs      = rsiSeries(closes);
+  const rsiVal  = rs[rs.length-1] ?? 50;
+  const srsiVal = calcStochRSI(closes);
+  const {histCur,histPrv} = calcMACD(closes);
+  const bbPct   = calcBB(closes);
+  const ema20   = stdEMA(closes,20);
+  const ema50   = stdEMA(closes,50);
+  const ema200  = stdEMA(closes,200);
+  const atrVal  = calcATR(highs,lows,closes);
+  const atrPct  = isNaN(atrVal)?0:atrVal/price*100;
+  const volAvg  = volumes.slice(-20).reduce((a,b)=>a+b)/20;
+  const volRatio= volumes[volumes.length-1]/volAvg;
+  const lb      = Math.min(24,closes.length-1);
+  const chg24h  = (price-closes[closes.length-1-lb])/closes[closes.length-1-lb]*100;
+
+  // Score
+  let score=0; const sigs=[];
+  if (rsiVal>=80)      {score-=2;sigs.push(`RSI ${rsiVal.toFixed(1)} extremo alto`);}
+  else if(rsiVal>=70)  {score-=1;sigs.push(`RSI ${rsiVal.toFixed(1)} sobrecompra`);}
+  else if(rsiVal<=20)  {score+=2;sigs.push(`RSI ${rsiVal.toFixed(1)} extremo bajo`);}
+  else if(rsiVal<=30)  {score+=1;sigs.push(`RSI ${rsiVal.toFixed(1)} sobreventa`);}
+  else                 {sigs.push(`RSI ${rsiVal.toFixed(1)}`);}
+  if(!isNaN(srsiVal)){
+    if(srsiVal>=90)    {score-=2;sigs.push(`StochRSI ${srsiVal.toFixed(1)} extremo alto`);}
+    else if(srsiVal>=80){score-=1;sigs.push(`StochRSI ${srsiVal.toFixed(1)} sobrecompra`);}
+    else if(srsiVal<=10){score+=2;sigs.push(`StochRSI ${srsiVal.toFixed(1)} extremo bajo`);}
+    else if(srsiVal<=20){score+=1;sigs.push(`StochRSI ${srsiVal.toFixed(1)} sobreventa`);}
+    else               {sigs.push(`StochRSI ${srsiVal.toFixed(1)}`);}
+  }
+  if(histCur<0&&histPrv>=0)      {score-=2;sigs.push("MACD cruce bajista");}
+  else if(histCur>0&&histPrv<=0) {score+=2;sigs.push("MACD cruce alcista");}
+  else if(histCur<0&&histCur<histPrv){score-=1;sigs.push("MACD empeorando");}
+  else if(histCur>0&&histCur>histPrv){score+=1;sigs.push("MACD mejorando");}
+  else if(histCur<0) score-=0.5; else score+=0.5;
+  if(bbPct>100)  {score-=1;sigs.push(`BB ${bbPct.toFixed(0)}% sobre banda sup`);}
+  else if(bbPct>90){score-=0.5;sigs.push(`BB ${bbPct.toFixed(0)}% cerca banda sup`);}
+  else if(bbPct<0)  {score+=1;sigs.push(`BB ${bbPct.toFixed(0)}% bajo banda inf`);}
+  else if(bbPct<10) {score+=0.5;sigs.push(`BB ${bbPct.toFixed(0)}% cerca banda inf`);}
+  if(!isNaN(ema20)&&!isNaN(ema50)&&!isNaN(ema200)){
+    if(price<ema20&&ema20<ema50&&ema50<ema200)      {score-=2;sigs.push("EMA bajista completo");}
+    else if(price>ema20&&ema20>ema50&&ema50>ema200) {score+=2;sigs.push("EMA alcista completo");}
+    else if(price<ema200&&price<ema50) {score-=1;sigs.push("Bajo EMA200 y EMA50");}
+    else if(price>ema200&&price>ema50) {score+=1;sigs.push("Sobre EMA200 y EMA50");}
+    else if(price<ema200) score-=0.5; else score+=0.5;
+  }
+  if(volRatio>=2&&score<=-2){score-=1;sigs.push(`Vol ×${volRatio.toFixed(1)} confirma bajada`);}
+  if(volRatio>=2&&score>=2) {score+=1;sigs.push(`Vol ×${volRatio.toFixed(1)} confirma subida`);}
+
+  let label,cls;
+  if(score<=-7)[label,cls]=["SHORT EXTREMO","se"];
+  else if(score<=-4)[label,cls]=["SHORT FUERTE","sf"];
+  else if(score<=-2)[label,cls]=["SHORT","sh"];
+  else if(score<0)  [label,cls]=["SHORT DÉBIL","sw"];
+  else if(score>=7) [label,cls]=["LONG EXTREMO","le"];
+  else if(score>=4) [label,cls]=["LONG FUERTE","lf"];
+  else if(score>=2) [label,cls]=["LONG","lo"];
+  else if(score>0)  [label,cls]=["LONG DÉBIL","lw"];
+  else              [label,cls]=["NEUTRAL","n"];
+
+  // Pre-calculate TP/SL for table columns
+  const isShort = ["se","sf","sh","sw"].includes(cls);
+  const isLong  = ["le","lf","lo","lw"].includes(cls);
+  const slDist  = atrVal * atrMult;
+  const sl_pct  = isShort ? +(slDist/price*100).toFixed(2) : isLong ? -(slDist/price*100).toFixed(2) : null;
+  const tp2_pct = isShort ? -(slDist*2/price*100).toFixed(2) : isLong ? +(slDist*2/price*100).toFixed(2) : null;
+
+  const base = symbol.replace("USDT","");
+  return {
+    symbol: symbol.replace("USDT","/USDT"),
+    link:   `https://www.binance.com/es/futures/${base}USDT`,
+    price, chg24h:+chg24h.toFixed(2),
+    rsi:+rsiVal.toFixed(1), srsi:+srsiVal.toFixed(1),
+    bb_pct:+bbPct.toFixed(1),
+    ema_trend:(!isNaN(ema200)&&price>ema200)?"ALCISTA":"BAJISTA",
+    vol_ratio:+volRatio.toFixed(2), atr_pct:+atrPct.toFixed(2),
+    score:+score.toFixed(1), signal:label, cls,
+    sl_pct, tp2_pct,
+    details: sigs.join(" · ")
+  };
+}
+
+// ── Binance API ────────────────────────────────────────────────────────────────
+async function getSymbols() {
+  const r = await fetch(`${BINANCE}/fapi/v1/exchangeInfo`);
+  const d = await r.json();
+  return d.symbols.filter(s=>s.contractType==="PERPETUAL"&&s.quoteAsset==="USDT"&&s.status==="TRADING").map(s=>s.symbol).sort();
+}
+async function getKlines(sym,interval,limit=200) {
+  try{const r=await fetch(`${BINANCE}/fapi/v1/klines?symbol=${sym}&interval=${interval}&limit=${limit}`);if(!r.ok)return null;return await r.json();}catch{return null;}
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+// ── Screener ───────────────────────────────────────────────────────────────────
+async function startScan() {
+  if (running) return;
+  running = true;
+  const btn = document.getElementById("scan-btn");
+  const interval = document.getElementById("interval-sel").value;
+  const atrMult  = parseFloat(document.getElementById("atr-mult").value);
+  btn.disabled=true; btn.textContent="⏳ Escaneando…";
+  showStatus('<span class="spinner"></span> Conectando con Binance…');
+
+  try {
+    const symbols = await getSymbols();
+    const total = symbols.length;
+    document.getElementById("progress-bar-wrap").style.display="block";
+    allData = [];
+    klinesCache.clear();
+    const BATCH = 15;
+
+    for (let i=0;i<symbols.length;i+=BATCH) {
+      const batch = symbols.slice(i,Math.min(i+BATCH,symbols.length));
+      const results = await Promise.all(batch.map(async s=>{
+        const k = await getKlines(s,interval,200);
+        if (k) klinesCache.set(s,k);
+        return analyzeKlines(s,k,atrMult);
+      }));
+      allData.push(...results.filter(Boolean));
+      const done=Math.min(i+BATCH,total);
+      document.getElementById("progress-bar").style.width=(done/total*100)+"%";
+      showStatus(`<span class="spinner"></span> Analizando ${done} / ${total} futuros…`);
+      if (i+BATCH<symbols.length) await sleep(150);
+    }
+
+    allData.sort((a,b)=>a.score-b.score);
+    document.getElementById("last-update").textContent="Actualizado: "+new Date().toLocaleTimeString("es-AR");
+    document.getElementById("progress-bar-wrap").style.display="none";
+    document.getElementById("status-msg").style.display="none";
+    document.getElementById("main-layout").style.display="flex";
+    updateStats(); applyFilters();
+  } catch(e) { showStatus("Error: "+e.message); }
+  running=false; btn.disabled=false; btn.textContent="▶ Re-escanear";
+}
+
+// ── Filter / Sort / Render ─────────────────────────────────────────────────────
+function setFilter(el) {
+  document.querySelectorAll(".stat-pill").forEach(p=>p.classList.remove("active"));
+  el.classList.add("active"); activeFilter=el.dataset.filter; applyFilters();
+}
+function applyFilters() {
+  const q=document.getElementById("search-box").value.toLowerCase().trim();
+  filtered=allData.filter(r=>{
+    if(q&&!r.symbol.toLowerCase().includes(q)) return false;
+    if(activeFilter==="short") return ["se","sf","sh","sw"].includes(r.cls);
+    if(activeFilter==="long")  return ["le","lf","lo","lw"].includes(r.cls);
+    if(activeFilter==="neutral") return r.cls==="n";
+    return true;
+  });
+  doSort(); renderTable();
+  document.getElementById("count-label").textContent=filtered.length+" resultados";
+}
+function sortBy(key) {
+  sortAsc=sortKey===key?!sortAsc:true; sortKey=key;
+  document.querySelectorAll("thead th").forEach(th=>th.classList.remove("sorted-asc","sorted-desc"));
+  const keys=["symbol","price","chg24h","score","signal","rsi","srsi","bb_pct","ema_trend","vol_ratio","sl_pct","tp2_pct"];
+  const idx=keys.indexOf(key);
+  if(idx>=0) document.querySelectorAll("thead th")[idx].classList.add(sortAsc?"sorted-asc":"sorted-desc");
+  doSort(); renderTable();
+}
+function doSort() {
+  filtered.sort((a,b)=>{
+    const va=a[sortKey]??0, vb=b[sortKey]??0;
+    if(typeof va==="string") return sortAsc?va.localeCompare(vb):vb.localeCompare(va);
+    return sortAsc?va-vb:vb-va;
+  });
+}
+function renderTable() {
+  const tbody=document.getElementById("table-body");
+  tbody.innerHTML="";
+  filtered.forEach(r=>{
+    const cSign=r.chg24h>=0?"pos":"neg";
+    const cStr=(r.chg24h>=0?"+":"")+r.chg24h.toFixed(2)+"%";
+    const emaC=r.ema_trend==="ALCISTA"?"ema-up":"ema-down";
+    const emaA=r.ema_trend==="ALCISTA"?"↑":"↓";
+    const rCol=rsiColor(r.rsi),sCol=rsiColor(r.srsi);
+    const isShort=["se","sf","sh","sw"].includes(r.cls);
+    const isLong=["le","lf","lo","lw"].includes(r.cls);
+    const slStr=r.sl_pct!=null?(isShort?"+":"")+r.sl_pct+"%":"—";
+    const tp2Str=r.tp2_pct!=null?(r.tp2_pct>0?"+":"")+r.tp2_pct+"%":"—";
+
+    const tr=document.createElement("tr");
+    tr.className=r.cls;
+    if(r.symbol===selectedSym) tr.classList.add("selected");
+    tr.innerHTML=`
+      <td><a class="sym-link" href="${r.link}" target="_blank" onclick="event.stopPropagation()">${r.symbol}</a></td>
+      <td>${fmtPrice(r.price)}</td>
+      <td class="${cSign}">${cStr}</td>
+      <td><strong>${r.score>0?"+"+r.score:r.score}</strong></td>
+      <td><span class="badge">${r.signal}</span></td>
+      <td>${r.rsi}<span class="rsi-bar"><span class="rsi-fill" style="width:${r.rsi}%;background:${rCol}"></span></span></td>
+      <td>${r.srsi}<span class="rsi-bar"><span class="rsi-fill" style="width:${r.srsi}%;background:${sCol}"></span></span></td>
+      <td>${r.bb_pct}%</td>
+      <td><span class="${emaC}">${emaA} ${r.ema_trend}</span></td>
+      <td>${r.vol_ratio>=2?"<strong>×"+r.vol_ratio+"</strong>":"×"+r.vol_ratio}</td>
+      <td class="sl-cell">${slStr}</td>
+      <td class="tp-cell">${tp2Str}</td>`;
+    tr.addEventListener("click",()=>openPanel(r));
+    tbody.appendChild(tr);
+  });
+}
+function updateStats() {
+  const t=allData.length,s=allData.filter(r=>["se","sf","sh","sw"].includes(r.cls)).length;
+  const l=allData.filter(r=>["le","lf","lo","lw"].includes(r.cls)).length,n=allData.filter(r=>r.cls==="n").length;
+  document.querySelector("[data-filter=all]").textContent=`TODOS: ${t}`;
+  document.querySelector("[data-filter=short]").textContent=`SHORT: ${s}`;
+  document.querySelector("[data-filter=long]").textContent=`LONG: ${l}`;
+  document.querySelector("[data-filter=neutral]").textContent=`NEUTRAL: ${n}`;
+}
+
+// ── Side Panel ─────────────────────────────────────────────────────────────────
+function openPanel(r) {
+  selectedSym = r.symbol;
+  renderTable(); // refresh selected highlight
+  const sym = r.symbol.replace("/USDT","USDT");
+  const klines = klinesCache.get(sym);
+  const atrMult = parseFloat(document.getElementById("atr-mult").value);
+  const tpsl = calcTPSL(r, klines, atrMult);
+
+  document.getElementById("panel-title").textContent = r.symbol;
+  document.getElementById("panel-body").innerHTML = buildPanelHTML(r, tpsl);
+  document.getElementById("side-panel").classList.add("open");
+  document.getElementById("table-wrap").classList.add("panel-open");
+
+  if (tpsl) updateCalc(tpsl);
+}
+function closePanel() {
+  selectedSym=null;
+  document.getElementById("side-panel").classList.remove("open");
+  document.getElementById("table-wrap").classList.remove("panel-open");
+  renderTable();
+}
+
+function buildPanelHTML(r, tpsl) {
+  const isShort = ["se","sf","sh","sw"].includes(r.cls);
+  const dirColor = isShort ? "#f87171" : "#4ade80";
+  const noTrade = !tpsl;
+
+  let levelsHTML = "";
+  if (tpsl) {
+    const pSign = v => v >= 0 ? "+" : "";
+    levelsHTML = `
+    <div class="section-title">Niveles de precio</div>
+    <table class="levels-table">
+      <tr style="background:#0d1117">
+        <td style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted)">Nivel</td>
+        <td style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);text-align:right">Precio</td>
+        <td style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);text-align:right">%</td>
+        <td style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);text-align:right">R:R</td>
+      </tr>
+      <tr class="entry-row">
+        <td class="level-label">🎯 Entrada</td>
+        <td class="level-price">${fmtPrice(tpsl.entry)}</td>
+        <td class="level-pct" style="color:var(--muted)">—</td>
+        <td class="level-rr">—</td>
+      </tr>
+      <tr class="sl-row">
+        <td class="level-label" style="color:#f87171">🛑 Stop Loss</td>
+        <td class="level-price" style="color:#f87171">${fmtPrice(tpsl.sl)}</td>
+        <td class="level-pct" style="color:#f87171">${pSign(tpsl.slPct)}${tpsl.slPct}%</td>
+        <td class="level-rr">base</td>
+      </tr>
+      <tr class="tp-row-1">
+        <td class="level-label" style="color:#86efac">✅ TP1</td>
+        <td class="level-price" style="color:#86efac">${fmtPrice(tpsl.tp1)}</td>
+        <td class="level-pct" style="color:#86efac">${pSign(tpsl.tp1Pct)}${tpsl.tp1Pct}%</td>
+        <td class="level-rr" style="color:#86efac">1 : 1</td>
+      </tr>
+      <tr class="tp-row-2">
+        <td class="level-label" style="color:#4ade80">✅ TP2</td>
+        <td class="level-price" style="color:#4ade80">${fmtPrice(tpsl.tp2)}</td>
+        <td class="level-pct" style="color:#4ade80">${pSign(tpsl.tp2Pct)}${tpsl.tp2Pct}%</td>
+        <td class="level-rr" style="color:#4ade80">1 : 2</td>
+      </tr>
+      <tr class="tp-row-3">
+        <td class="level-label" style="color:#22c55e">✅ TP3</td>
+        <td class="level-price" style="color:#22c55e">${fmtPrice(tpsl.tp3)}</td>
+        <td class="level-pct" style="color:#22c55e">${pSign(tpsl.tp3Pct)}${tpsl.tp3Pct}%</td>
+        <td class="level-rr" style="color:#22c55e">1 : 3</td>
+      </tr>
+    </table>
+    <p class="swing-note">
+      SL alternativo (swing ±0.3%): ${fmtPrice(tpsl.slSwing)} (${tpsl.slSwingPct > 0 ? "+" : ""}${tpsl.slSwingPct}%)<br>
+      ATR(14): ${fmtPrice(tpsl.atr)} · Distancia SL: ${fmtPrice(tpsl.slDist)}
+    </p>`;
+  } else {
+    levelsHTML = `<p style="color:var(--muted);font-size:13px">Señal NEUTRAL — sin niveles de TP/SL sugeridos.</p>`;
+  }
+
+  const calcHTML = tpsl ? `
+    <hr class="sep">
+    <div class="calc-box">
+      <div class="section-title">Calculadora de posición</div>
+      <div class="calc-row">
+        <div>
+          <label class="calc-label">Capital (USD)</label>
+          <input class="calc-input" id="calc-capital" type="number" value="1000" min="1" oninput="updateCalc(currentTPSL)">
+        </div>
+        <div>
+          <label class="calc-label">Riesgo por trade (%)</label>
+          <input class="calc-input" id="calc-risk" type="number" value="1" min="0.1" max="20" step="0.1" oninput="updateCalc(currentTPSL)">
+        </div>
+      </div>
+      <div id="calc-results"></div>
+    </div>` : "";
+
+  return `
+    <div style="margin-bottom:14px">
+      <div style="font-size:15px;color:#f9fafb;margin-bottom:4px">${fmtPrice(r.price)} <span style="font-size:12px;color:${r.chg24h>=0?'#4ade80':'#f87171'}">${r.chg24h>=0?"+":""}${r.chg24h}% 24h</span></div>
+      <span class="badge" style="font-size:12px;background:${dirColor}22;color:${dirColor};border:1px solid ${dirColor}44">${r.signal}</span>
+      <span style="color:var(--muted);font-size:12px;margin-left:8px">Score: ${r.score>0?"+":""}${r.score}</span>
+    </div>
+    <hr class="sep">
+    ${levelsHTML}
+    ${calcHTML}
+    <hr class="sep">
+    <div class="section-title">Indicadores activos</div>
+    <div class="indicators-list">${r.details.split(" · ").map(s=>"• "+s).join("<br>")}</div>
+    <hr class="sep">
+    <a href="${r.link}" target="_blank" style="display:block;text-align:center;background:var(--accent);color:#fff;padding:10px;border-radius:6px;text-decoration:none;font-weight:700">
+      Abrir en Binance Futures →
+    </a>`;
+}
+
+let currentTPSL = null;
+function openPanel(r) {
+  selectedSym = r.symbol;
+  renderTable();
+  const sym = r.symbol.replace("/USDT","USDT");
+  const klines = klinesCache.get(sym);
+  const atrMult = parseFloat(document.getElementById("atr-mult").value);
+  currentTPSL = calcTPSL(r, klines, atrMult);
+  document.getElementById("panel-title").textContent = r.symbol;
+  document.getElementById("panel-body").innerHTML = buildPanelHTML(r, currentTPSL);
+  document.getElementById("side-panel").classList.add("open");
+  document.getElementById("table-wrap").classList.add("panel-open");
+  if (currentTPSL) updateCalc(currentTPSL);
+}
+
+function updateCalc(tpsl) {
+  if (!tpsl) return;
+  currentTPSL = tpsl;
+  const capEl = document.getElementById("calc-capital");
+  const riskEl = document.getElementById("calc-risk");
+  if (!capEl || !riskEl) return;
+  const capital  = parseFloat(capEl.value) || 1000;
+  const riskPct  = parseFloat(riskEl.value) || 1;
+  const riskAmt  = capital * riskPct / 100;
+  const slPct    = Math.abs(tpsl.entry - tpsl.sl) / tpsl.entry;
+  const posUSD   = riskAmt / slPct;
+  const coinQty  = posUSD / tpsl.entry;
+  const gain1    = riskAmt * 1, gain2 = riskAmt * 2, gain3 = riskAmt * 3;
+
+  document.getElementById("calc-results").innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      <tr><td class="result-label">Riesgo máximo</td>  <td style="text-align:right;color:#f87171;font-weight:700">−$${riskAmt.toFixed(2)}</td></tr>
+      <tr><td class="result-label">Tamaño posición</td><td style="text-align:right;font-weight:700">$${posUSD.toFixed(2)}</td></tr>
+      <tr><td class="result-label">Cantidad coins</td> <td style="text-align:right;font-weight:700">${coinQty.toFixed(5)}</td></tr>
+      <tr><td style="padding-top:6px;color:var(--muted);font-size:11px" colspan="2">GANANCIA POTENCIAL</td></tr>
+      <tr><td class="result-label">En TP1 (1:1)</td>   <td style="text-align:right;color:#86efac;font-weight:700">+$${gain1.toFixed(2)}</td></tr>
+      <tr><td class="result-label">En TP2 (1:2)</td>   <td style="text-align:right;color:#4ade80;font-weight:700">+$${gain2.toFixed(2)}</td></tr>
+      <tr><td class="result-label">En TP3 (1:3)</td>   <td style="text-align:right;color:#22c55e;font-weight:700">+$${gain3.toFixed(2)}</td></tr>
+    </table>`;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function showStatus(html){const el=document.getElementById("status-msg");el.style.display="block";el.innerHTML=html;}
+function fmtPrice(p){if(p>=1000)return"$"+p.toLocaleString("es-AR",{maximumFractionDigits:2});if(p>=1)return"$"+p.toFixed(4);if(p>=0.001)return"$"+p.toFixed(6);return"$"+p.toFixed(8);}
+function rsiColor(v){if(v>=70)return"#ef4444";if(v>=55)return"#f97316";if(v<=30)return"#22c55e";if(v<=45)return"#84cc16";return"#6b7280";}
+</script>
+</body>
+</html>
